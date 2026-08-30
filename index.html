@@ -1,16 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Image Hand</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Hand — Resolver Test</title>
 </head>
 <body>
-
   <h1>Image Hand 👋</h1>
+  <p>Google Drive share URL → direct image URL</p>
 
-  <img
-    src="https://drive.google.com/uc?export=view&id=1IBUnff0WeujlffQolv7PshQ7giY5wYUU"
-    style="max-width: 100%; height: auto;"
-  >
+  <input id="url" type="url" size="70" placeholder="Paste Google Drive share URL">
+  <button id="resolve">Resolve</button>
 
+  <p id="status"></p>
+  <p>
+    <label>Direct image URL:</label><br>
+    <input id="direct" type="text" size="70" readonly>
+    <button id="copy">Copy</button>
+  </p>
+
+  <img id="preview" alt="Resolved image preview" style="max-width: 100%; height: auto; display: none;">
+
+  <script>
+    function extractDriveId(value) {
+      try {
+        const url = new URL(value.trim());
+
+        // /file/d/FILE_ID/view
+        const match = url.pathname.match(/\/file\/d\/([^/]+)/);
+        if (match) return match[1];
+
+        // ?id=FILE_ID
+        const id = url.searchParams.get('id');
+        if (id) return id;
+      } catch (_) {
+        // Invalid URL; handled below.
+      }
+      return null;
+    }
+
+    function resolveDriveUrl() {
+      const input = document.getElementById('url').value;
+      const id = extractDriveId(input);
+      const status = document.getElementById('status');
+      const direct = document.getElementById('direct');
+      const preview = document.getElementById('preview');
+
+      if (!id) {
+        status.textContent = '❌ I could not find a Google Drive file ID in that URL.';
+        direct.value = '';
+        preview.style.display = 'none';
+        return;
+      }
+
+      const directUrl = `https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`;
+      direct.value = directUrl;
+      status.textContent = `✓ File ID found: ${id}`;
+      preview.src = directUrl;
+      preview.style.display = 'block';
+      preview.onerror = () => {
+        status.textContent = '✓ URL resolved, but Google did not allow the image to load here.';
+      };
+      preview.onload = () => {
+        status.textContent = '✓ Direct image loaded.';
+      };
+    }
+
+    document.getElementById('resolve').addEventListener('click', resolveDriveUrl);
+    document.getElementById('copy').addEventListener('click', async () => {
+      const value = document.getElementById('direct').value;
+      if (!value) return;
+      await navigator.clipboard.writeText(value);
+      document.getElementById('status').textContent = '✓ Direct URL copied.';
+    });
+  </script>
 </body>
 </html>
