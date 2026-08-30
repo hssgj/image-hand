@@ -1,3 +1,7 @@
 name = "image-hand"
 main = "worker.js"
 compatibility_date = "2026-08-30"
+
+[[kv_namespaces]]
+binding = "OAUTH_TOKENS"
+id = "0d60071ee2614b668e6a145b3a1ae0b5"
