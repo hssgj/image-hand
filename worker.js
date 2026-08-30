@@ -86,11 +86,10 @@ async function serveDriveImage(request, env, fileId) {
   headers.set("Content-Length", String(bytes.byteLength));
   headers.set("Content-Disposition", "inline");
   headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("X-Robots-Tag", "noindex, nofollow");
   headers.set("Cross-Origin-Resource-Policy", "cross-origin");
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  headers.set("Cache-Control", "public, max-age=86400");
+  headers.set("Cache-Control", "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800");
   headers.set("CDN-Cache-Control", "public, max-age=86400");
   headers.set("Accept-Ranges", "bytes");
   headers.set("ETag", `"${fileId}-${bytes.byteLength}"`);
@@ -99,9 +98,15 @@ async function serveDriveImage(request, env, fileId) {
   return new Response(bytes, { status: 200, headers });
 }
 
-function visionProxyUrl(request, fileId) {
-  const direct = new URL(`/i/${encodeURIComponent(fileId)}.jpg`, request.url).toString();
-  return `https://wsrv.nl/?url=${encodeURIComponent(direct)}&output=jpg&maxage=1d`;
+function publicImageUrl(request, fileId) {
+  return new URL(`/i/${encodeURIComponent(fileId)}.jpg`, request.url).toString();
+}
+
+function fetcherView(request, fileId) {
+  const imageUrl = publicImageUrl(request, fileId);
+  const canonical = new URL(`/view/${encodeURIComponent(fileId)}`, request.url).toString();
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Image Hand</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="${canonical}"><meta property="og:type" content="website"><meta property="og:title" content="Image Hand"><meta property="og:image" content="${imageUrl}"><meta property="og:image:type" content="image/jpeg"><meta property="og:url" content="${canonical}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${imageUrl}"></head><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${imageUrl}" alt="Image Hand image" style="max-width:100%;height:auto"></body></html>`;
+  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400, s-maxage=86400", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" } });
 }
 
 export default {
@@ -139,8 +144,11 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS" } });
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
 
+    const viewMatch = url.pathname.match(/^\/view\/([a-zA-Z0-9_-]+)$/);
+    if (viewMatch) return fetcherView(request, viewMatch[1]);
+
     const visionMatch = url.pathname.match(/^\/vision\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
-    if (visionMatch) return Response.redirect(visionProxyUrl(request, visionMatch[1]), 302);
+    if (visionMatch) return fetcherView(request, visionMatch[1]);
 
     const cleanMatch = url.pathname.match(/^\/i\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
     if (cleanMatch) return serveDriveImage(request, env, cleanMatch[1]);
@@ -152,6 +160,6 @@ export default {
       return serveDriveImage(request, env, fileId);
     }
 
-    return new Response("Image Hand Worker online. Use /oauth, /image?url=<Google Drive URL>, /i/<fileId>.jpg, or /vision/<fileId>.jpg.");
+    return new Response("Image Hand Worker online. Use /oauth, /image?url=<Google Drive URL>, /i/<fileId>.jpg, or /view/<fileId>.");
   },
 };
