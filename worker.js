@@ -18,28 +18,15 @@ function json(data, status = 200) {
 function extractDriveFileId(input) {
   const value = String(input || "").trim();
   if (!value) return null;
-
-  // Direct file ID.
-  if (/^[a-zA-Z0-9_-]{10,}$/.test(value) && !value.includes("/")) {
-    return value;
-  }
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(value) && !value.includes("/")) return value;
 
   try {
     const url = new URL(value);
-
-    // /file/d/<ID>/...
     const fileMatch = url.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
     if (fileMatch) return fileMatch[1];
-
-    // ?id=<ID>
     const id = url.searchParams.get("id");
     if (id && /^[a-zA-Z0-9_-]+$/.test(id)) return id;
-
-    // /open?id=<ID>, /uc?id=<ID>, etc. are covered by the query-string case.
-  } catch {
-    return null;
-  }
-
+  } catch {}
   return null;
 }
 
@@ -57,10 +44,7 @@ async function exchangeCode(request, env, code) {
   });
 
   const text = await response.text();
-  if (!response.ok) {
-    return { ok: false, response, text };
-  }
-
+  if (!response.ok) return { ok: false };
   return { ok: true, token: JSON.parse(text) };
 }
 
@@ -77,9 +61,7 @@ async function refreshAccessToken(env, stored) {
   });
 
   const text = await response.text();
-  if (!response.ok) {
-    return { ok: false, text };
-  }
+  if (!response.ok) return { ok: false };
 
   const token = JSON.parse(text);
   return {
@@ -114,13 +96,12 @@ async function getGoogleAccessToken(env) {
     return { ok: false, error: "Google access-token refresh failed." };
   }
 
-  const updated = {
+  await env.OAUTH_TOKENS.put(TOKEN_KEY, JSON.stringify({
     refresh_token: stored.refresh_token,
     access_token: refreshed.access_token,
     expires_at: refreshed.expires_at,
-  };
+  }));
 
-  await env.OAUTH_TOKENS.put(TOKEN_KEY, JSON.stringify(updated));
   return { ok: true, access_token: refreshed.access_token };
 }
 
@@ -129,9 +110,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/oauth") {
-      if (!env.GOOGLE_CLIENT_ID) {
-        return new Response("Missing GOOGLE_CLIENT_ID.", { status: 500 });
-      }
+      if (!env.GOOGLE_CLIENT_ID) return new Response("Missing GOOGLE_CLIENT_ID.", { status: 500 });
 
       const auth = new URL(GOOGLE_AUTH_URL);
       auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
@@ -140,7 +119,6 @@ export default {
       auth.searchParams.set("scope", SCOPES);
       auth.searchParams.set("access_type", "offline");
       auth.searchParams.set("prompt", "consent");
-
       return Response.redirect(auth.toString(), 302);
     }
 
@@ -148,56 +126,35 @@ export default {
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
 
-      if (error) {
-        return new Response(`Google OAuth error: ${error}`, { status: 400 });
-      }
-
-      if (!code) {
-        return new Response("Missing Google authorization code.", { status: 400 });
-      }
-
+      if (error) return new Response(`Google OAuth error: ${error}`, { status: 400 });
+      if (!code) return new Response("Missing Google authorization code.", { status: 400 });
       if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
         return new Response("OAuth configuration is incomplete.", { status: 500 });
       }
-
       if (!env.OAUTH_TOKENS) {
-        return new Response(
-          "OAuth works, but OAUTH_TOKENS storage is not configured yet.",
-          { status: 500 },
-        );
+        return new Response("OAuth works, but OAUTH_TOKENS storage is not configured yet.", { status: 500 });
       }
 
       const exchanged = await exchangeCode(request, env, code);
-      if (!exchanged.ok) {
-        return new Response("Google token exchange failed.", { status: 502 });
-      }
+      if (!exchanged.ok) return new Response("Google token exchange failed.", { status: 502 });
 
       const token = exchanged.token;
       if (!token.refresh_token) {
-        return new Response(
-          "Google authorization succeeded, but no refresh token was returned.",
-          { status: 502 },
-        );
+        return new Response("Google authorization succeeded, but no refresh token was returned.", { status: 502 });
       }
 
       const expiresIn = Number(token.expires_in || 3600);
-      await env.OAUTH_TOKENS.put(
-        TOKEN_KEY,
-        JSON.stringify({
-          refresh_token: token.refresh_token,
-          access_token: token.access_token || null,
-          expires_at: Date.now() + Math.max(0, expiresIn - 60) * 1000,
-        }),
-      );
+      await env.OAUTH_TOKENS.put(TOKEN_KEY, JSON.stringify({
+        refresh_token: token.refresh_token,
+        access_token: token.access_token || null,
+        expires_at: Date.now() + Math.max(0, expiresIn - 60) * 1000,
+      }));
 
       return json({
         ok: true,
         oauth: "google",
         token_exchange: "success",
-        access_token_received: Boolean(token.access_token),
-        refresh_token_received: true,
         stored: true,
-        next_step: "Use /image?url=<Google Drive URL> to retrieve an image.",
       });
     }
 
@@ -206,48 +163,30 @@ export default {
       const fileId = extractDriveFileId(source);
 
       if (!fileId) {
-        return json({
-          ok: false,
-          error: "Provide a Google Drive file URL or file ID using ?url=... or ?id=...",
-        }, 400);
+        return json({ ok: false, error: "Provide a Google Drive file URL or file ID using ?url=... or ?id=..." }, 400);
       }
 
       const access = await getGoogleAccessToken(env);
-      if (!access.ok) {
-        return json({ ok: false, error: access.error }, 401);
-      }
+      if (!access.ok) return json({ ok: false, error: access.error }, 401);
 
       const driveUrl = new URL(`${GOOGLE_DRIVE_API}/${encodeURIComponent(fileId)}`);
       driveUrl.searchParams.set("alt", "media");
 
       const imageResponse = await fetch(driveUrl, {
-        headers: {
-          Authorization: `Bearer ${access.access_token}`,
-        },
+        headers: { Authorization: `Bearer ${access.access_token}` },
       });
 
       if (!imageResponse.ok) {
-        return json({
-          ok: false,
-          error: "Google Drive image retrieval failed.",
-          status: imageResponse.status,
-        }, imageResponse.status === 404 ? 404 : 502);
+        return json({ ok: false, error: "Google Drive image retrieval failed.", status: imageResponse.status }, imageResponse.status === 404 ? 404 : 502);
       }
 
       const headers = new Headers();
-      const contentType = imageResponse.headers.get("Content-Type") || "application/octet-stream";
-      headers.set("Content-Type", contentType);
+      headers.set("Content-Type", imageResponse.headers.get("Content-Type") || "application/octet-stream");
       headers.set("Cache-Control", "private, max-age=60");
 
-      return new Response(imageResponse.body, {
-        status: 200,
-        headers,
-      });
+      return new Response(imageResponse.body, { status: 200, headers });
     }
 
-    return new Response(
-      "Image Hand Worker online. Use /oauth to authorize Google, then /image?url=<Google Drive URL>.",
-      { headers: { "Content-Type": "text/plain; charset=utf-8" } },
-    );
+    return new Response("Image Hand Worker online. Use /oauth, then /image?url=<Google Drive URL>.");
   },
 };
