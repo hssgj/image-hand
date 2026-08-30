@@ -98,10 +98,7 @@ async function serveDriveImage(request, env, fileId) {
   return new Response(bytes, { status: 200, headers });
 }
 
-function publicImageUrl(request, fileId) {
-  return new URL(`/i/${encodeURIComponent(fileId)}.jpg`, request.url).toString();
-}
-
+function publicImageUrl(request, fileId) { return new URL(`/i/${encodeURIComponent(fileId)}.jpg`, request.url).toString(); }
 function fetcherView(request, fileId) {
   const imageUrl = publicImageUrl(request, fileId);
   const canonical = new URL(`/view/${encodeURIComponent(fileId)}`, request.url).toString();
@@ -112,6 +109,10 @@ function fetcherView(request, fileId) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/debug/config") {
+      return json({ ok: true, google_client_id: Boolean(env.GOOGLE_CLIENT_ID), google_client_secret: Boolean(env.GOOGLE_CLIENT_SECRET), oauth_tokens: Boolean(env.OAUTH_TOKENS) });
+    }
 
     if (url.pathname === "/oauth") {
       if (!env.GOOGLE_CLIENT_ID) return new Response("Missing GOOGLE_CLIENT_ID.", { status: 500 });
@@ -146,10 +147,8 @@ export default {
 
     const viewMatch = url.pathname.match(/^\/view\/([a-zA-Z0-9_-]+)$/);
     if (viewMatch) return fetcherView(request, viewMatch[1]);
-
     const visionMatch = url.pathname.match(/^\/vision\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
     if (visionMatch) return fetcherView(request, visionMatch[1]);
-
     const cleanMatch = url.pathname.match(/^\/i\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
     if (cleanMatch) return serveDriveImage(request, env, cleanMatch[1]);
 
