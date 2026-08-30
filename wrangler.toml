@@ -1,6 +1,10 @@
 name = "image-hand"
 main = "worker.js"
 compatibility_date = "2026-08-30"
+keep_vars = true
+
+[secrets]
+required = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 
 [[kv_namespaces]]
 binding = "OAUTH_TOKENS"
