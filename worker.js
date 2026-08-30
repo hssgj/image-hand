@@ -79,9 +79,7 @@ async function serveDriveImage(request, env, fileId) {
   const detectedType = sniffImageType(bytes);
   const contentType = detectedType || (declaredType.startsWith("image/") ? declaredType : "application/octet-stream");
 
-  if (!contentType.startsWith("image/")) {
-    return json({ ok: false, error: "Drive file is not a recognized image.", content_type: declaredType }, 415);
-  }
+  if (!contentType.startsWith("image/")) return json({ ok: false, error: "Drive file is not a recognized image.", content_type: declaredType }, 415);
 
   const headers = new Headers();
   headers.set("Content-Type", contentType);
@@ -99,6 +97,11 @@ async function serveDriveImage(request, env, fileId) {
 
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
   return new Response(bytes, { status: 200, headers });
+}
+
+function visionProxyUrl(request, fileId) {
+  const direct = new URL(`/i/${encodeURIComponent(fileId)}.jpg`, request.url).toString();
+  return `https://wsrv.nl/?url=${encodeURIComponent(direct)}&output=jpg&maxage=1d`;
 }
 
 export default {
@@ -136,6 +139,9 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS" } });
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
 
+    const visionMatch = url.pathname.match(/^\/vision\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
+    if (visionMatch) return Response.redirect(visionProxyUrl(request, visionMatch[1]), 302);
+
     const cleanMatch = url.pathname.match(/^\/i\/([a-zA-Z0-9_-]+)(?:\.[a-zA-Z0-9]+)?$/);
     if (cleanMatch) return serveDriveImage(request, env, cleanMatch[1]);
 
@@ -146,6 +152,6 @@ export default {
       return serveDriveImage(request, env, fileId);
     }
 
-    return new Response("Image Hand Worker online. Use /oauth, /image?url=<Google Drive URL>, or /i/<fileId>.jpg.");
+    return new Response("Image Hand Worker online. Use /oauth, /image?url=<Google Drive URL>, /i/<fileId>.jpg, or /vision/<fileId>.jpg.");
   },
 };
